@@ -1,0 +1,2 @@
+redis
+dataclasses_jsonschema[fast-validation]
