@@ -1,6 +1,7 @@
-# Redorm
+# RedORM
 
-A simple Redis ORM that only a madman would use in production
+A simple Redis ORM that only a madman would use in production.  
+The red in RedORM both means Redis as well as the color red, as red is the fastest colour!
 
 ## Quick Start
 
