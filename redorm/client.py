@@ -14,21 +14,12 @@ class RedormClient:
         self.bind(REDORM_URL)
 
     def bind(self, url) -> bool:
-        match = re.match(
-            r"redis://(?P<host>[^:^/]+)(?::(?P<port>[0-9]+))?(?:/(?P<db>[0-9]+))?", url,
-        )
-        if match:
-            d = match.groupdict()
-            host = d["host"]
-            port = int(d["port"]) if d["port"] is not None else 6379
-            db = int(d["db"]) if d["db"] is not None else 0
-            self.pool = redis.ConnectionPool(host=host, port=port, db=db)
-            self.client = redis.Redis(connection_pool=self.pool)
+        if url:
+            self.client = redis.Redis.from_url(url, decode_responses=True)
             return True
         else:
             # Lightweight fake redis
-            self.server = fakeredis.FakeServer()
-            self.client = fakeredis.FakeStrictRedis(server=self.server)
+            self.client = fakeredis.FakeRedis(decode_responses=True)
             return False
 
     def init_app(self, app):

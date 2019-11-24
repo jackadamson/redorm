@@ -8,10 +8,10 @@ Binary = NewType("Binary", bytes)
 class BinaryField(FieldEncoder):
     """Base64 encoded bytes"""
 
-    def to_wire(self, value: str) -> Binary:
-        return b64encode(value)
+    def to_wire(self, value: Binary) -> str:
+        return b64encode(value).encode("utf-8")
 
-    def to_python(self, value: Binary) -> str:
+    def to_python(self, value: str) -> Binary:
         return b64decode(value)
 
     @property

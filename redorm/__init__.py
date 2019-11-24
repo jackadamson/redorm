@@ -7,5 +7,5 @@ from redorm.relationships import (
     Relationship,
     RelationshipConfigEnum,
 )
-from redorm.exceptions import RedisInstanceNotFound, RedormException
+from redorm.exceptions import InstanceNotFound, RedormException
 from redorm.types import Binary

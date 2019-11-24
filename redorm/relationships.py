@@ -1,6 +1,6 @@
 from typing import List, Type, Optional, TypeVar, Union
 from enum import Enum, auto
-from redorm.model import RedisBase, all_models
+from redorm.model import RedisBase, all_models, IRelationship
 from redorm.client import red
 
 __all__ = [
@@ -24,7 +24,7 @@ T = TypeVar("T", bound=RedisBase)
 U = TypeVar("U", bound=RedisBase)
 
 
-class Relationship:
+class Relationship(IRelationship):
     def __init__(
         self,
         foreign_type: Union[str, Type[U]],
@@ -70,16 +70,12 @@ class Relationship:
             related_ids = red.client.smembers(
                 f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
             )
-            return foreign_type.get_bulk([rid.decode() for rid in related_ids])
+            return foreign_type.get_bulk(related_ids)
         else:
             related_id = red.client.get(
                 f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
             )
-            return (
-                foreign_type.get(related_id.decode())
-                if related_id is not None
-                else None
-            )
+            return foreign_type.get(related_id) if related_id is not None else None
 
     def fset(
         self, instance: T, value: Union[None, str, U, List[Union[str, U]]],
@@ -108,8 +104,7 @@ class Relationship:
                     f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
                 )
                 result = pipeline.execute()
-                print(f"results: {result!r}")
-                related_id_old = result[0].decode() if result[0] else None
+                related_id_old = result[0]
             else:
                 related_id_old = red.client.getset(
                     f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}",
@@ -153,7 +148,7 @@ class Relationship:
             if (not isinstance(value, list)) and (not isinstance(value, set)):
                 raise ValueError("Expected list or set for new relationships")
             old_related_ids = {
-                r.decode()
+                r
                 for r in red.client.smembers(
                     f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
                 )

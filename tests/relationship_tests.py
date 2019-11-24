@@ -1,11 +1,16 @@
-from dataclasses import dataclass
-from redorm import RedisBase, one_to_one, one_to_many, many_to_one, many_to_many
+from dataclasses import dataclass, field
+from typing import Optional
+from redorm import RedisBase, one_to_one, one_to_many, many_to_one, many_to_many, red
+
+red.bind("redis://localhost")
+red.client.flushall()
 
 
 @dataclass
 class Person(RedisBase):
-    name: str
-    age: int
+    name: str = field(metadata={"unique": True})
+    age: int = field(metadata={"index": True})
+    evilness: Optional[int] = field(metadata={"index": True}, default=None)
     siblings = many_to_many(foreign_type="Person", backref="siblings")
     dad = many_to_one(foreign_type="Person", backref="children")
     children = one_to_many(foreign_type="Person", backref="dad")
@@ -18,11 +23,11 @@ class Color(RedisBase):
     liker = one_to_one(Person, backref="favourite_color")
 
 
-red = Color.create(name="Red")
-homer = Person.create(name="Homer", age=50, favourite_color=red)
+homer = Person.create(name="Homer", age=50)
 print(f"homer.children={homer.children!r}")
 print(f"homer.favourite_color={homer.favourite_color!r}")
 bart = Person.create(name="Bart", age=11, dad=homer)
+evil_bart = Person.create(name="Evil Bart", age=11, dad=homer, evilness=100)
 print(f"homer.children={homer.children!r}")
 print(f"bart.favourite_color={bart.favourite_color!r}")
 blue = Color.create(name="Blue", liker=bart)
@@ -33,3 +38,8 @@ print(f"homer.children={homer.children!r}")
 print(f"bart.dad={bart.dad!r}")
 bart.dad = None
 print(f"bart.dad={bart.dad!r}")
+assert len(Person.list(evilness=None)) == 3
+assert len(Person.list(evilness=100)) == 1
+bart.update(evilness=100)
+assert len(Person.list(evilness=None)) == 2
+assert len(Person.list(evilness=100)) == 2
