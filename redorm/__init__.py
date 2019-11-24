@@ -8,3 +8,4 @@ from redorm.relationships import (
     RelationshipConfigEnum,
 )
 from redorm.exceptions import RedisInstanceNotFound, RedormException
+from redorm.types import Binary
