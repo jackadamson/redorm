@@ -1,6 +1,7 @@
 from typing import List, Type, Optional, TypeVar, Union
 from enum import Enum, auto
-from redorm.model import RedisBase, all_models, redis_client
+from redorm.model import RedisBase, all_models
+from redorm.client import red
 
 __all__ = [
     "RelationshipConfigEnum",
@@ -66,12 +67,12 @@ class Relationship:
             RelationshipConfigEnum.MANY_TO_MANY,
             RelationshipConfigEnum.ONE_TO_MANY,
         }:
-            related_ids = redis_client.smembers(
+            related_ids = red.client.smembers(
                 f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
             )
             return foreign_type.get_bulk([rid.decode() for rid in related_ids])
         else:
-            related_id = redis_client.get(
+            related_id = red.client.get(
                 f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
             )
             return (
@@ -99,7 +100,7 @@ class Relationship:
             else:
                 raise ValueError("Expected new value of string or Model")
             if related_id_new is None:
-                pipeline = redis_client.pipeline()
+                pipeline = red.client.pipeline()
                 pipeline.get(
                     f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
                 )
@@ -110,7 +111,7 @@ class Relationship:
                 print(f"results: {result!r}")
                 related_id_old = result[0].decode() if result[0] else None
             else:
-                related_id_old = redis_client.getset(
+                related_id_old = red.client.getset(
                     f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}",
                     related_id_new,
                 )
@@ -118,33 +119,33 @@ class Relationship:
                 return
             if self.config == RelationshipConfigEnum.MANY_TO_ONE:
                 if related_id_old is None:
-                    redis_client.sadd(
+                    red.client.sadd(
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
                         instance.id,
                     )
                 elif related_id_new is None:
-                    redis_client.srem(
+                    red.client.srem(
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}",
                         instance.id,
                     )
                 else:
-                    redis_client.smove(
+                    red.client.smove(
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}",
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
                         instance.id,
                     )
             else:
                 if related_id_old is None:
-                    redis_client.set(
+                    red.client.set(
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
                         instance.id,
                     )
                 elif related_id_new is None:
-                    redis_client.delete(
+                    red.client.delete(
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
                     )
                 else:
-                    redis_client.rename(
+                    red.client.rename(
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}",
                         f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
                     )
@@ -153,14 +154,14 @@ class Relationship:
                 raise ValueError("Expected list or set for new relationships")
             old_related_ids = {
                 r.decode()
-                for r in redis_client.smembers(
+                for r in red.client.smembers(
                     f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
                 )
             }
             new_related_ids = {(r.id if isinstance(r, RedisBase) else r) for r in value}
             if len(old_related_ids.symmetric_difference(new_related_ids)) == 0:
                 return
-            pipeline = redis_client.pipeline()
+            pipeline = red.client.pipeline()
             pipeline.delete(
                 f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
             )

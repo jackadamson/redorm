@@ -1,2 +1,4 @@
+fakeredis
 redis
 dataclasses_jsonschema[fast-validation]
+environs

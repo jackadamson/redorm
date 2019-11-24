@@ -2,12 +2,10 @@ from typing import List, Type, Optional, TypeVar
 from dataclasses import dataclass, field
 from uuid import uuid4
 import json
-import redis
 from dataclasses_jsonschema import JsonSchemaMixin
 from redorm.exceptions import RedisInstanceNotFound
+from redorm.client import red
 
-redis_pool = redis.ConnectionPool(host="localhost", port=6379, db=1)
-redis_client = redis.Redis(connection_pool=redis_pool)
 
 S = TypeVar("S", bound="RedisBase")
 
@@ -20,7 +18,7 @@ class RedisBase(JsonSchemaMixin):
 
     @classmethod
     def get(cls: Type[S], instance_id: str) -> Optional[S]:
-        data = redis_client.get(f"{cls.__name__}:member:{instance_id}")
+        data = red.client.get(f"{cls.__name__}:member:{instance_id}")
         if data is None:
             return None
         else:
@@ -28,7 +26,7 @@ class RedisBase(JsonSchemaMixin):
 
     @classmethod
     def get_bulk(cls: Type[S], instance_ids: List[str]) -> List[S]:
-        data = redis_client.mget(
+        data = red.client.mget(
             [f"{cls.__name__}:member:{instance_id}" for instance_id in instance_ids]
         )
         if data is None:
@@ -48,7 +46,7 @@ class RedisBase(JsonSchemaMixin):
             if k not in cls.__annotations__:
                 setattr(new_instance, k, v)
 
-        pipe = redis_client.pipeline()
+        pipe = red.client.pipeline()
         instance_dict = new_instance.to_dict()
         pipe.set(
             f"{cls.__name__}:member:{new_instance.id}",
@@ -59,8 +57,8 @@ class RedisBase(JsonSchemaMixin):
 
     @classmethod
     def list(cls: Type[S]) -> List[S]:
-        members_data = redis_client.mget(
-            list(redis_client.scan_iter(f"{cls.__name__}:member:*"))
+        members_data = red.client.mget(
+            list(red.client.scan_iter(f"{cls.__name__}:member:*"))
         )
         return [
             cls.from_json(member_data.decode("utf-8"))
@@ -69,28 +67,28 @@ class RedisBase(JsonSchemaMixin):
         ]
 
     def delete(self):
-        with redis_client.lock(f"{self.__class__.__name__}:member:{self.id}"):
-            redis_client.delete(self.id)
+        with red.client.lock(f"{self.__class__.__name__}:member:{self.id}"):
+            red.client.delete(self.id)
 
     def refresh(self) -> None:
-        latest = redis_client.get(f"{self.__class__.__name__}:member:{self.id}")
+        latest = red.client.get(f"{self.__class__.__name__}:member:{self.id}")
         if latest is None:
             raise RedisInstanceNotFound
         for k, v in json.loads(latest.decode("utf-8")):
             setattr(self, k, v)
 
     def save(self) -> None:
-        redis_client.set(
+        red.client.set(
             f"{self.__class__.__name__}:member:{self.id}",
             json.dumps(self.to_dict(), sort_keys=True),
         )
 
     def update(self, **kwargs):
-        with redis_client.lock(f"{self.__class__.__name__}:member:{self.id}"):
+        with red.client.lock(f"{self.__class__.__name__}:member:{self.id}"):
             self.refresh()
             for k, v in kwargs:
                 setattr(self, k, v)
-            redis_client.set(
+            red.client.set(
                 f"{self.__class__.__name__}:member:{self.id}",
                 json.dumps(self.to_dict(), sort_keys=True),
             )

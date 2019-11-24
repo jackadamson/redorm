@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from redorm import *
+from redorm import RedisBase, one_to_one, one_to_many, many_to_one, many_to_many
 
 
 @dataclass

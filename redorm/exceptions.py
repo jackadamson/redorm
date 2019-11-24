@@ -4,3 +4,7 @@ class RedormException(Exception):
 
 class RedisInstanceNotFound(RedormException):
     pass
+
+
+class DevelopmentServerUsedInProd(RedormException):
+    pass
