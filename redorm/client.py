@@ -22,7 +22,7 @@ class RedormClient:
             host = d["host"]
             port = int(d["port"]) if d["port"] is not None else 6379
             db = int(d["db"]) if d["db"] is not None else 0
-            self.pool = redis.ConnectionPool(host="localhost", port=6379, db=1)
+            self.pool = redis.ConnectionPool(host=host, port=port, db=db)
             self.client = redis.Redis(connection_pool=self.pool)
             return True
         else:
