@@ -1,13 +1,13 @@
 from dataclasses import dataclass, field
 from typing import Optional
-from redorm import RedisBase, one_to_one, one_to_many, many_to_one, many_to_many, red
+from redorm import RedormBase, one_to_one, one_to_many, many_to_one, many_to_many, red
 
 red.bind("redis://localhost")
 red.client.flushall()
 
 
 @dataclass
-class Person(RedisBase):
+class Person(RedormBase):
     name: str = field(metadata={"unique": True})
     age: int = field(metadata={"index": True})
     evilness: Optional[int] = field(metadata={"index": True}, default=None)
@@ -18,7 +18,7 @@ class Person(RedisBase):
 
 
 @dataclass
-class Color(RedisBase):
+class Color(RedormBase):
     name: str
     liker = one_to_one(Person, backref="favourite_color")
 

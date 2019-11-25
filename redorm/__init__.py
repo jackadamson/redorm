@@ -1,4 +1,4 @@
-from redorm.model import all_models, RedisBase, red
+from redorm.model import all_models, RedormBase, red
 from redorm.relationships import (
     many_to_many,
     many_to_one,

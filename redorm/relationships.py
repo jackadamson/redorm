@@ -1,6 +1,6 @@
 from typing import List, Type, Optional, TypeVar, Union
 from enum import Enum, auto
-from redorm.model import RedisBase, all_models, IRelationship
+from redorm.model import RedormBase, all_models, IRelationship
 from redorm.client import red
 
 __all__ = [
@@ -20,8 +20,8 @@ class RelationshipConfigEnum(Enum):
     MANY_TO_MANY = auto()
 
 
-T = TypeVar("T", bound=RedisBase)
-U = TypeVar("U", bound=RedisBase)
+T = TypeVar("T", bound=RedormBase)
+U = TypeVar("U", bound=RedormBase)
 
 
 class Relationship(IRelationship):
@@ -87,7 +87,7 @@ class Relationship(IRelationship):
             RelationshipConfigEnum.ONE_TO_ONE,
         }:
             related_id_new: Optional[str]
-            if isinstance(value, RedisBase):
+            if isinstance(value, RedormBase):
                 related_id_new = value.id
             elif isinstance(value, str):
                 related_id_new = value
@@ -153,7 +153,9 @@ class Relationship(IRelationship):
                     f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
                 )
             }
-            new_related_ids = {(r.id if isinstance(r, RedisBase) else r) for r in value}
+            new_related_ids = {
+                (r.id if isinstance(r, RedormBase) else r) for r in value
+            }
             if len(old_related_ids.symmetric_difference(new_related_ids)) == 0:
                 return
             pipeline = red.client.pipeline()

@@ -9,11 +9,11 @@ To install `pip install redorm`
 
 ```python
 from dataclasses import dataclass
-from redorm import RedisBase, one_to_one, one_to_many, many_to_one, many_to_many
+from redorm import RedormBase, one_to_one, one_to_many, many_to_one, many_to_many
 
 
 @dataclass
-class Person(RedisBase):
+class Person(RedormBase):
     name: str
     age: int
     siblings = many_to_many(foreign_type="Person", backref="siblings")
@@ -23,7 +23,7 @@ class Person(RedisBase):
 
 
 @dataclass
-class Color(RedisBase):
+class Color(RedormBase):
     name: str
     liker = one_to_one(Person, backref="favourite_color")
 ```

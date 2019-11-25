@@ -12,14 +12,14 @@ from redorm.exceptions import (
 )
 from redorm.client import red
 
-S = TypeVar("S", bound="RedisBase")
+S = TypeVar("S", bound="RedormBase")
 
 all_models = dict()
 
 
 @dataclass
-class RedisBase(JsonSchemaMixin):
-    id: Final[str] = field(metadata={"unique": True})
+class RedormBase(JsonSchemaMixin):
+    id: str = field(metadata={"unique": True})
 
     @classmethod
     def get(cls: Type[S], instance_id=None, **kwargs) -> S:
@@ -32,7 +32,7 @@ class RedisBase(JsonSchemaMixin):
                 instance_ids = cls._list_ids(id=instance_id, **kwargs)
 
             if len(instance_ids) == 1:
-                return cls._get(instance_ids[0])
+                return cls._get(instance_ids.pop())
             elif len(instance_ids) > 1:
                 raise MultipleInstancesReturned
             else:
@@ -44,7 +44,7 @@ class RedisBase(JsonSchemaMixin):
         if data is None:
             raise InstanceNotFound
         else:
-            return cls.from_dict(json.loads(data))
+            return cls.from_json(data, validate=False)
 
     @classmethod
     def get_bulk(cls: Type[S], instance_ids: List[str]) -> List[S]:
@@ -125,6 +125,7 @@ class RedisBase(JsonSchemaMixin):
         ]
 
     def delete(self):
+        # TODO: Handle removal of relationships and unique/indexes
         with red.client.lock(f"{self.__class__.__name__}:lock:{self.id}"):
             red.client.delete(self.id)
 
