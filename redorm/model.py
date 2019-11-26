@@ -1,4 +1,4 @@
-from typing import List, Type, TypeVar, Final, Set
+from typing import List, Type, TypeVar, Set
 from dataclasses import dataclass, field, fields, Field
 from uuid import uuid4
 import json
