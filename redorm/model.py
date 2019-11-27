@@ -75,6 +75,7 @@ class RedormBase(JsonSchemaMixin):
     def _list_ids(cls, **kwargs) -> Set[str]:
         field_dict = {f.name: f for f in fields(cls)}
         pre_pipeline = red.client.pipeline()
+        indexes = set()
         try:
             for k, v in kwargs.items():
                 if k in field_dict:
@@ -89,10 +90,11 @@ class RedormBase(JsonSchemaMixin):
                             )
                     elif field_dict[k].metadata.get("index"):
                         if v is None:
-                            key = f"{cls.__name__}:indexnull:{f.name}"
+                            indexes.add(f"{cls.__name__}:indexnull:{f.name}")
                         else:
-                            key = f"{cls.__name__}:index:{f.name}:{cls._encode_field(f.type, v, omit_none=False)}"
-                        pre_pipeline.smembers(key)
+                            indexes.add(
+                                f"{cls.__name__}:index:{f.name}:{cls._encode_field(f.type, v, omit_none=False)}"
+                            )
                     else:
                         raise FilterOnUnindexedField(
                             f"Trying to filter on unindexed field: {k}"
@@ -104,6 +106,8 @@ class RedormBase(JsonSchemaMixin):
 
         except KeyError as e:
             raise UnknownFieldName(*e.args) from e
+        if indexes:
+            pre_pipeline.sinter(indexes)
         results = pre_pipeline.execute()
         sets = [r if isinstance(r, set) else {r} for r in results]
         ret = sets[0]
