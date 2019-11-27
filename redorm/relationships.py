@@ -42,16 +42,11 @@ class Relationship(IRelationship):
         self.backref = backref
         self.__relationship_name = None
         self.__doc__ = None
+        self.__owner = None
 
-    def ensure_relationship_name(self, instance: T):
-        if self.__relationship_name is None:
-            rels = [k for k, v in instance.__class__.__dict__.items() if v is self]
-            if len(rels) == 1:
-                self.__relationship_name = rels[0]
-            elif len(rels) > 1:
-                raise ValueError("Same relationship re-used on object")
-            else:
-                raise ValueError("Could not find relationship on object")
+    def __set_name__(self, owner, name):
+        self.__owner = owner
+        self.__relationship_name = name
 
     def get_foreign_type(self) -> Type[U]:
         if self.foreign_type is None:
@@ -60,28 +55,26 @@ class Relationship(IRelationship):
         else:
             return self.foreign_type
 
-    def fget(self, instance: T):
-        self.ensure_relationship_name(instance)
+    def __get__(self, instance: T, objtype=None):
+        if instance is None:
+            return self
         foreign_type: Type[U] = self.get_foreign_type()
+        relationship_path = f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
         if self.config in {
             RelationshipConfigEnum.MANY_TO_MANY,
             RelationshipConfigEnum.ONE_TO_MANY,
         }:
-            related_ids = red.client.smembers(
-                f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
-            )
+            related_ids = red.client.smembers(relationship_path)
             return foreign_type.get_bulk(related_ids)
         else:
-            related_id = red.client.get(
-                f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
-            )
+            related_id = red.client.get(relationship_path)
             return foreign_type.get(related_id) if related_id is not None else None
 
-    def fset(
+    def __set__(
         self, instance: T, value: Union[None, str, U, List[Union[str, U]]],
     ):
-        self.ensure_relationship_name(instance)
         foreign_type = self.get_foreign_type()
+        relationship_path = f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
         if self.config in {
             RelationshipConfigEnum.MANY_TO_ONE,
             RelationshipConfigEnum.ONE_TO_ONE,
@@ -97,133 +90,86 @@ class Relationship(IRelationship):
                 raise ValueError("Expected new value of string or Model")
             if related_id_new is None:
                 pipeline = red.client.pipeline()
-                pipeline.get(
-                    f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
-                )
-                pipeline.delete(
-                    f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
-                )
+                pipeline.get(relationship_path)
+                pipeline.delete(relationship_path)
                 result = pipeline.execute()
                 related_id_old = result[0]
             else:
-                related_id_old = red.client.getset(
-                    f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}",
-                    related_id_new,
-                )
+                related_id_old = red.client.getset(relationship_path, related_id_new,)
             if related_id_new == related_id_old or self.backref is None:
                 return
+            rel_new = (
+                f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}"
+            )
+            rel_old = (
+                f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}"
+            )
             if self.config == RelationshipConfigEnum.MANY_TO_ONE:
                 if related_id_old is None:
                     red.client.sadd(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
-                        instance.id,
+                        rel_new, instance.id,
                     )
                 elif related_id_new is None:
                     red.client.srem(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}",
-                        instance.id,
+                        rel_old, instance.id,
                     )
                 else:
                     red.client.smove(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}",
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
-                        instance.id,
+                        rel_old, rel_new, instance.id,
                     )
             else:
                 if related_id_old is None:
                     red.client.set(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
-                        instance.id,
+                        rel_new, instance.id,
                     )
                 elif related_id_new is None:
-                    red.client.delete(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
-                    )
+                    red.client.delete(rel_new,)
                 else:
                     red.client.rename(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}",
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}",
+                        rel_old, rel_new,
                     )
         else:
             if (not isinstance(value, list)) and (not isinstance(value, set)):
                 raise ValueError("Expected list or set for new relationships")
-            old_related_ids = {
-                r
-                for r in red.client.smembers(
-                    f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
-                )
-            }
+            old_related_ids = {r for r in red.client.smembers(relationship_path)}
             new_related_ids = {
                 (r.id if isinstance(r, RedormBase) else r) for r in value
             }
             if len(old_related_ids.symmetric_difference(new_related_ids)) == 0:
                 return
             pipeline = red.client.pipeline()
-            pipeline.delete(
-                f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
-            )
+            pipeline.delete(relationship_path)
             if new_related_ids:
                 pipeline.sadd(
-                    f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}",
-                    *new_related_ids,
+                    relationship_path, *new_related_ids,
                 )
             if self.backref is None:
                 pipeline.execute()
                 return
             ids_to_remove = old_related_ids - new_related_ids
             ids_to_add = new_related_ids - old_related_ids
+            reverse_path = f"{foreign_type.__name__}:relationship:{self.backref}"
             if self.config == RelationshipConfigEnum.MANY_TO_MANY:
                 for idr in ids_to_remove:
                     pipeline.srem(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{idr}",
-                        instance.id,
+                        f"{reverse_path}:{idr}", instance.id,
                     )
                 for ida in ids_to_add:
                     pipeline.sadd(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{ida}",
-                        instance.id,
+                        f"{reverse_path}:{ida}", instance.id,
                     )
             elif self.config == RelationshipConfigEnum.ONE_TO_MANY:
                 for idr in ids_to_remove:
-                    pipeline.delete(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{idr}"
-                    )
+                    pipeline.delete(f"{reverse_path}:{idr}")
                 for ida in ids_to_add:
                     pipeline.set(
-                        f"{foreign_type.__name__}:relationship:{self.backref}:{ida}",
-                        instance.id,
+                        f"{reverse_path}:{ida}", instance.id,
                     )
             else:
                 raise ValueError(
                     "Expected relationship config to be of type RelationshipConfigEnum"
                 )
             pipeline.execute()
-
-    def __get__(self, obj, objtype=None):
-        if obj is None:
-            return self
-        if self.fget is None:
-            raise AttributeError("unreadable attribute")
-        return self.fget(obj)
-
-    def __set__(self, obj, value):
-        if self.fset is None:
-            raise AttributeError("can't set attribute")
-        self.fset(obj, value)
-
-    def __delete__(self, obj):
-        if self.fdel is None:
-            raise AttributeError("can't delete relationship")
-        self.fdel(obj)
-
-    def getter(self, fget):
-        return type(self)(fget, self.fset, self.fdel, self.__doc__)
-
-    def setter(self, fset):
-        return type(self)(self.fget, fset, self.fdel, self.__doc__)
-
-    def deleter(self, fdel):
-        return type(self)(self.fget, self.fset, fdel, self.__doc__)
 
 
 def one_to_many(
