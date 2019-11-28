@@ -269,6 +269,8 @@ class RedormBase(JsonSchemaMixin):
             unique_pipeline.sadd(f"{cls_name}:keynull:{f.name}", self.id)
             revert_pipeline.srem(f"{cls_name}:keynull:{f.name}", self.id)
         unique_pipeline_result = unique_pipeline.execute()[1:]
+        if unique_pipeline_result[0] == 1:
+            revert_pipeline.srem(f"{self.__class__.__name__}:all", self.id)
         unique_violating_fields = []
         for i, r in enumerate(
             unique_pipeline_result[: len(changed_unique_fields_non_null) * 3 : 3]
