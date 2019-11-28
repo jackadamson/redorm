@@ -22,7 +22,6 @@ from redorm.exceptions import (
 )
 from redorm.client import red
 
-
 S = TypeVar("S", bound="RedormBase")
 
 all_models = dict()
@@ -188,9 +187,23 @@ class RedormBase(JsonSchemaMixin):
                             f"Trying to filter on unindexed field: {k}"
                         )
                 elif isinstance(cls.__dict__[k], IRelationship):
-                    raise NotImplementedError(
-                        "Can't filter based off relationships yet"
-                    )
+                    rel = cls.__dict__[k]
+                    if rel.to_many:
+                        raise NotImplementedError(
+                            "Can't filter based off to-many relationships"
+                        )
+                    if rel.backref is None:
+                        raise NotImplementedError(
+                            "Filtering on a relationship requires a backref"
+                        )
+                    rel_type = rel.get_foreign_type().__name__
+                    if not isinstance(v, str):
+                        v = v.id
+                    ref = f"{rel_type}:relationship:{rel.backref}:{v}"
+                    if rel.many_to:
+                        indexes.add(ref)
+                    else:
+                        pre_pipeline.get(ref)
 
         except KeyError as e:
             raise UnknownFieldName(*e.args) from e
@@ -212,6 +225,23 @@ class RedormBase(JsonSchemaMixin):
         else:
             member_ids = red.client.smembers(f"{cls.__name__}:all")
         return cls.get_bulk(member_ids)
+
+    def lock(
+        self,
+        timeout=None,
+        sleep=0.1,
+        blocking=True,
+        blocking_timeout=None,
+        thread_local=True,
+    ):
+        return red.client.lock(
+            f"{self.__class__.__name__}:userlock:{self.id}",
+            timeout=timeout,
+            sleep=sleep,
+            blocking=blocking,
+            blocking_timeout=blocking_timeout,
+            thread_local=thread_local,
+        )
 
     def delete(self):
         # TODO: Handle removal of relationships and unique/indexes

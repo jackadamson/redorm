@@ -46,6 +46,10 @@ class Relationship(IRelationship):
             RelationshipConfigEnum.MANY_TO_MANY,
             RelationshipConfigEnum.ONE_TO_MANY,
         }
+        self.many_to = config in {
+            RelationshipConfigEnum.MANY_TO_MANY,
+            RelationshipConfigEnum.MANY_TO_ONE,
+        }
         self.relationship_name = None
         self.lazy = lazy
         self.__doc__ = None
