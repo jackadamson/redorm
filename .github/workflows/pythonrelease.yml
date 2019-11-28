@@ -1,4 +1,4 @@
-name: Create a release if version changes
+name: Create Release
 
 on:
   push:
@@ -29,3 +29,14 @@ jobs:
         release_name: ${{ steps.get_version.outputs.release_name }}
         draft: false
         prerelease: false
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install setuptools wheel twine
+    - name: Build and publish
+      env:
+        TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+      run: |
+        python setup.py sdist bdist_wheel
+        twine upload dist/*
