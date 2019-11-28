@@ -52,11 +52,12 @@ class Relationship(IRelationship):
         self.__owner = None
         self.cached_class = None
         self.cached_ref = None
+        self.relationship_base = None
 
     def __set_name__(self, owner, name):
         self.__owner = owner
         self.relationship_name = name
-        # TODO: Ask Magic if better way
+        self.relationship_base = f"{name}:relationship:{self.relationship_name}"
         owner._relationships = dict(**owner._relationships, **{name: self})
 
     def get_foreign_type(self) -> Type[U]:
@@ -73,7 +74,7 @@ class Relationship(IRelationship):
             return self.cached_class
         if not self.lazy:
             print("Cache miss!")
-        relationship_path = f"{instance.__class__.__name__}:relationship:{self.relationship_name}:{instance.id}"
+        relationship_path = f"{self.relationship_base}:{instance.id}"
         if self.to_many:
             if self.cached_ref is None:
                 self.cached_ref = red.client.smembers(relationship_path)
@@ -91,7 +92,7 @@ class Relationship(IRelationship):
         self, instance: T, value: Union[None, str, U, List[Union[str, U]]],
     ):
         foreign_type = self.get_foreign_type()
-        relationship_path = f"{instance.__class__.__name__}:relationship:{self.relationship_name}:{instance.id}"
+        relationship_path = f"{self.relationship_base}:{instance.id}"
         if self.config in {
             RelationshipConfigEnum.MANY_TO_ONE,
             RelationshipConfigEnum.ONE_TO_ONE,
