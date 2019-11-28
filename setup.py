@@ -1,4 +1,5 @@
 import setuptools
+import re
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -8,9 +9,17 @@ with open("requirements.txt", "r") as fr:
         l.strip() for l in fr.read().split("\n") if len(l) > 0 and "#" not in l
     ]
 
+with open("redorm/__init__.py", "r") as f:
+    version_match = re.search(
+        r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE
+    )
+    if version_match is None:
+        raise ValueError("Version not found in aiplayerground/__init__.py")
+    version = version_match.group(1)
+
 setuptools.setup(
     name="redorm",
-    version="0.5.1`",
+    version=version,
     author="Jack Adamson",
     author_email="jack@mrfluffybunny.com",
     description="A simple redis ORM",

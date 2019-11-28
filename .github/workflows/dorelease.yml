@@ -1,0 +1,33 @@
+name: Create a release if version changes
+
+on:
+  push:
+    paths:
+      - 'redorm/_version.py'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python
+      uses: actions/setup-python@v1
+      with:
+        python-version: '3.7'
+    - name: Get Package Version
+      run: |
+      python getversion.py
+      echo "##[set-output name=release_name;]$(git log --pretty='%s' -1 | head -n 1)"
+      echo "##[set-output name=body;]$(git log --pretty='%s' -1 | tail -n +2)"
+      id: get_version
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+      with:
+        tag_name: ${{ steps.get_version.outputs.version }}
+        release_name: ${{ steps.get_version.outputs.release_name }}
+        body: ${{ steps.get_version.outputs.body }}
+        draft: false
+        prerelease: false
