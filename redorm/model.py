@@ -230,15 +230,15 @@ class RedormBase(JsonSchemaMixin):
         self,
         timeout=None,
         sleep=0.1,
-        blocking=True,
         blocking_timeout=None,
+        lock_class=None,
         thread_local=True,
     ):
         return red.client.lock(
             f"{self.__class__.__name__}:userlock:{self.id}",
             timeout=timeout,
             sleep=sleep,
-            blocking=blocking,
+            lock_class=lock_class,
             blocking_timeout=blocking_timeout,
             thread_local=thread_local,
         )
