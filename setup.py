@@ -9,9 +9,9 @@ with open("requirements.txt", "r") as fr:
         l.strip() for l in fr.read().split("\n") if len(l) > 0 and "#" not in l
     ]
 
-with open("redorm/__init__.py", "r") as f:
+with open("redorm/_version.py", "r") as f:
     version_match = re.search(
-        r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE
+        r'^version \s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE
     )
     if version_match is None:
         raise ValueError("Version not found in aiplayerground/__init__.py")
