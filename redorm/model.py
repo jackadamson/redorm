@@ -42,7 +42,10 @@ class Query:
         results = []
         while self.resolvers:
             resolver = self.resolvers.pop()
-            results.append(resolver(self))
+            try:
+                results.append(resolver(self))
+            except InstanceNotFound:
+                pass
         return list(reversed(results))
 
 
@@ -56,7 +59,11 @@ class RedormBase(JsonSchemaMixin):
         if instance_id is not None and len(kwargs) == 0:
             query = Query()
             cls._get(query, instance_id)
-            return query.execute()[0]
+            res = query.execute()
+            if res:
+                return res[0]
+            else:
+                raise InstanceNotFound
         else:
             if instance_id is None:
                 if kwargs:
@@ -99,6 +106,7 @@ class RedormBase(JsonSchemaMixin):
             print(
                 f"None for data, class={cls.__name__!r}, query.pipeline_results={query.pipeline_results!r}, query.resolvers={query.resolvers!r}"
             )
+            raise InstanceNotFound
         return cls.from_json(data, validate=False)
 
     @classmethod

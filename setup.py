@@ -10,7 +10,7 @@ with open("requirements.txt", "r") as fr:
 
 setuptools.setup(
     name="redorm",
-    version="0.5.0",
+    version="0.5.1`",
     author="Jack Adamson",
     author_email="jack@mrfluffybunny.com",
     description="A simple redis ORM",
