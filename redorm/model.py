@@ -1,6 +1,16 @@
-from typing import List, Type, TypeVar, Set
+from typing import (
+    List,
+    Type,
+    TypeVar,
+    Set,
+    ClassVar,
+    Iterable,
+    Callable,
+    Optional,
+)
 from dataclasses import dataclass, field, fields, Field
 from uuid import uuid4
+from collections import OrderedDict
 import json
 from dataclasses_jsonschema import JsonSchemaMixin
 from redorm.exceptions import (
@@ -12,49 +22,117 @@ from redorm.exceptions import (
 )
 from redorm.client import red
 
+
 S = TypeVar("S", bound="RedormBase")
 
 all_models = dict()
 
 
+class Query:
+    pipeline_results: Optional[List]
+
+    def __init__(self):
+        self.results = []
+        self.pipeline_results = None
+        self.resolvers: List[Callable[["Query"], None]] = []
+        self.pipeline = red.client.pipeline()
+
+    def execute(self) -> List:
+        self.pipeline_results: List = self.pipeline.execute()
+        results = []
+        while self.resolvers:
+            resolver = self.resolvers.pop()
+            results.append(resolver(self))
+        return list(reversed(results))
+
+
 @dataclass
 class RedormBase(JsonSchemaMixin):
     id: str = field(metadata={"unique": True})
+    _relationships: ClassVar = OrderedDict()
 
     @classmethod
     def get(cls: Type[S], instance_id=None, **kwargs) -> S:
         if instance_id is not None and len(kwargs) == 0:
-            return cls._get(instance_id)
+            query = Query()
+            cls._get(query, instance_id)
+            return query.execute()[0]
         else:
             if instance_id is None:
-                instance_ids = cls._list_ids(**kwargs)
+                if kwargs:
+                    instance_ids = cls._list_ids(**kwargs)
+                else:
+                    raise InstanceNotFound
             else:
                 instance_ids = cls._list_ids(id=instance_id, **kwargs)
 
             if len(instance_ids) == 1:
-                return cls._get(instance_ids.pop())
+                instance_id = instance_ids.pop()
+                query = Query()
+                cls._get(query, instance_id)
+                return query.execute()[0]
             elif len(instance_ids) > 1:
                 raise MultipleInstancesReturned
             else:
                 raise InstanceNotFound
 
     @classmethod
-    def _get(cls: Type[S], instance_id: str) -> S:
-        data = red.client.get(f"{cls.__name__}:member:{instance_id}")
+    def _resolve(cls: Type[S], query: Query) -> S:
+        for rel_name, relation in reversed(cls._relationships.items()):
+            relation.cached_ref = query.pipeline_results.pop()
+            if not relation.lazy:
+                res = query.pipeline_results.pop()
+                if res is None:
+                    relation.cached_class = None
+                elif isinstance(res, list):
+                    relation.cached_class = [
+                        relation.get_foreign_type().from_json(d, validate=False)
+                        for d in res
+                        if d is not None
+                    ]
+                else:
+                    relation.cached_class = relation.get_foreign_type().from_json(
+                        res, validate=False
+                    )
+        data = query.pipeline_results.pop()
         if data is None:
-            raise InstanceNotFound
-        else:
-            return cls.from_json(data, validate=False)
+            print(
+                f"None for data, class={cls.__name__!r}, query.pipeline_results={query.pipeline_results!r}, query.resolvers={query.resolvers!r}"
+            )
+        return cls.from_json(data, validate=False)
 
     @classmethod
-    def get_bulk(cls: Type[S], instance_ids: List[str]) -> List[S]:
-        data = red.client.mget(
-            [f"{cls.__name__}:member:{instance_id}" for instance_id in instance_ids]
-        )
-        if data is None:
+    def _get(cls: Type[S], query: Query, instance_id: str):
+        query.pipeline.get(f"{cls.__name__}:member:{instance_id}")
+        for rel_name, relation in cls._relationships.items():
+            rel_key = f"{cls.__name__}:relationship:{rel_name}:{instance_id}"
+            if not relation.lazy:
+                if relation.to_many:
+                    query.pipeline.evalsha(
+                        red.get_set_indirect_sha,
+                        2,
+                        f"{relation.get_foreign_type().__name__}:member:",
+                        rel_key,
+                    )
+                else:
+                    query.pipeline.evalsha(
+                        red.get_key_indirect_sha, 1, rel_key,
+                    )
+            if relation.to_many:
+                query.pipeline.smembers(rel_key)
+            else:
+                query.pipeline.get(rel_key)
+
+        query.resolvers.append(cls._resolve)
+
+    @classmethod
+    def get_bulk(cls: Type[S], instance_ids: Set[str]) -> Iterable[S]:
+        if len(instance_ids) == 0:
             return []
-        else:
-            return [cls.from_dict(json.loads(d)) for d in data if d is not None]
+        query = Query()
+        for instance_id in instance_ids:
+            cls._get(query, instance_id)
+        return query.execute()
 
     @classmethod
     def create(cls: Type[S], **kwargs) -> S:
@@ -65,10 +143,10 @@ class RedormBase(JsonSchemaMixin):
         }
         new_id = str(uuid4())
         new_instance = cls.from_dict(dict(id=new_id, **field_values))
-        new_instance.save()
         for k, v in kwargs.items():
             if k not in field_values:
                 setattr(new_instance, k, v)
+        new_instance.save()
         return new_instance
 
     @classmethod
@@ -76,6 +154,8 @@ class RedormBase(JsonSchemaMixin):
         field_dict = {f.name: f for f in fields(cls)}
         pre_pipeline = red.client.pipeline()
         indexes = set()
+        if not kwargs:
+            return set()
         try:
             for k, v in kwargs.items():
                 if k in field_dict:
@@ -109,7 +189,9 @@ class RedormBase(JsonSchemaMixin):
         if indexes:
             pre_pipeline.sinter(indexes)
         results = pre_pipeline.execute()
-        sets = [r if isinstance(r, set) else {r} for r in results]
+        sets = [r if isinstance(r, set) else {r} for r in results if r is not None]
+        if not sets:
+            return set()
         ret = sets[0]
         for s in sets[1:]:
             ret.intersection_update(s)
@@ -119,14 +201,9 @@ class RedormBase(JsonSchemaMixin):
     def list(cls: Type[S], **kwargs) -> List[S]:
         if len(kwargs) > 0:
             member_ids = cls._list_ids(**kwargs)
-            return cls.get_bulk(list(member_ids))
         else:
-            members_data = red.client.mget(
-                list(red.client.scan_iter(f"{cls.__name__}:member:*"))
-            )
-        return [
-            cls.from_json(member_data) for member_data in members_data if member_data
-        ]
+            member_ids = red.client.smembers(f"{cls.__name__}:all")
+        return cls.get_bulk(member_ids)
 
     def delete(self):
         # TODO: Handle removal of relationships and unique/indexes
@@ -158,6 +235,8 @@ class RedormBase(JsonSchemaMixin):
 
         # Pipeline to ensure uniqueness of unique fields
         unique_pipeline = red.client.pipeline()
+        unique_pipeline.sadd(f"{self.__class__.__name__}:all", self.id)
+        # TODO: Handle rollback
         changed_unique_fields_non_null = [
             f
             for f in instance_fields
@@ -189,7 +268,7 @@ class RedormBase(JsonSchemaMixin):
         for f in changed_unique_fields_null:
             unique_pipeline.sadd(f"{cls_name}:keynull:{f.name}", self.id)
             revert_pipeline.srem(f"{cls_name}:keynull:{f.name}", self.id)
-        unique_pipeline_result = unique_pipeline.execute()
+        unique_pipeline_result = unique_pipeline.execute()[1:]
         unique_violating_fields = []
         for i, r in enumerate(
             unique_pipeline_result[: len(changed_unique_fields_non_null) * 3 : 3]

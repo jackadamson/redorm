@@ -24,12 +24,14 @@ T = TypeVar("T", bound=RedormBase)
 U = TypeVar("U", bound=RedormBase)
 
 
+# noinspection PyProtectedMember
 class Relationship(IRelationship):
     def __init__(
         self,
         foreign_type: Union[str, Type[U]],
         config: RelationshipConfigEnum = RelationshipConfigEnum.MANY_TO_MANY,
         backref: Optional[str] = None,
+        lazy: bool = True,
     ):
         self.config = config
         if isinstance(foreign_type, str):
@@ -40,13 +42,22 @@ class Relationship(IRelationship):
             self.__foreign_type = foreign_type.__name__
         self.fdel = None
         self.backref = backref
-        self.__relationship_name = None
+        self.to_many = config in {
+            RelationshipConfigEnum.MANY_TO_MANY,
+            RelationshipConfigEnum.ONE_TO_MANY,
+        }
+        self.relationship_name = None
+        self.lazy = lazy
         self.__doc__ = None
         self.__owner = None
+        self.cached_class = None
+        self.cached_ref = None
 
     def __set_name__(self, owner, name):
         self.__owner = owner
-        self.__relationship_name = name
+        self.relationship_name = name
+        # TODO: Ask Magic if better way
+        owner._relationships = dict(**owner._relationships, **{name: self})
 
     def get_foreign_type(self) -> Type[U]:
         if self.foreign_type is None:
@@ -58,23 +69,29 @@ class Relationship(IRelationship):
     def __get__(self, instance: T, objtype=None):
         if instance is None:
             return self
-        foreign_type: Type[U] = self.get_foreign_type()
-        relationship_path = f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
-        if self.config in {
-            RelationshipConfigEnum.MANY_TO_MANY,
-            RelationshipConfigEnum.ONE_TO_MANY,
-        }:
-            related_ids = red.client.smembers(relationship_path)
-            return foreign_type.get_bulk(related_ids)
+        if self.cached_class is not None:
+            return self.cached_class
+        if not self.lazy:
+            print("Cache miss!")
+        relationship_path = f"{instance.__class__.__name__}:relationship:{self.relationship_name}:{instance.id}"
+        if self.to_many:
+            if self.cached_ref is None:
+                self.cached_ref = red.client.smembers(relationship_path)
+            return self.get_foreign_type().get_bulk(self.cached_ref)
         else:
-            related_id = red.client.get(relationship_path)
-            return foreign_type.get(related_id) if related_id is not None else None
+            if self.cached_ref is None:
+                self.cached_ref = red.client.get(relationship_path)
+            return (
+                self.get_foreign_type().get(self.cached_ref)
+                if self.cached_ref is not None
+                else None
+            )
 
     def __set__(
         self, instance: T, value: Union[None, str, U, List[Union[str, U]]],
     ):
         foreign_type = self.get_foreign_type()
-        relationship_path = f"{instance.__class__.__name__}:relationship:{self.__relationship_name}:{instance.id}"
+        relationship_path = f"{instance.__class__.__name__}:relationship:{self.relationship_name}:{instance.id}"
         if self.config in {
             RelationshipConfigEnum.MANY_TO_ONE,
             RelationshipConfigEnum.ONE_TO_ONE,
@@ -173,40 +190,44 @@ class Relationship(IRelationship):
 
 
 def one_to_many(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None,
+    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,
         config=RelationshipConfigEnum.ONE_TO_MANY,
         backref=backref,
+        lazy=lazy,
     )
 
 
 def one_to_one(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None,
+    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,
         config=RelationshipConfigEnum.ONE_TO_ONE,
         backref=backref,
+        lazy=lazy,
     )
 
 
 def many_to_one(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None,
+    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,
         config=RelationshipConfigEnum.MANY_TO_ONE,
         backref=backref,
+        lazy=lazy,
     )
 
 
 def many_to_many(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None,
+    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,
         config=RelationshipConfigEnum.MANY_TO_MANY,
         backref=backref,
+        lazy=lazy,
     )
