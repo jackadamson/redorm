@@ -16,9 +16,8 @@ jobs:
         python-version: '3.7'
     - name: Get Package Version
       run: |
-      python getversion.py
-      echo "##[set-output name=release_name;]$(git log --pretty='%s' -1 | head -n 1)"
-      echo "##[set-output name=body;]$(git log --pretty='%s' -1 | tail -n +2)"
+        python getversion.py
+        echo "##[set-output name=release_name;]$(git log --pretty='%s' -1 | head -n 1)"
       id: get_version
     - name: Create Release
       id: create_release
@@ -28,6 +27,5 @@ jobs:
       with:
         tag_name: ${{ steps.get_version.outputs.version }}
         release_name: ${{ steps.get_version.outputs.release_name }}
-        body: ${{ steps.get_version.outputs.body }}
         draft: false
         prerelease: false
