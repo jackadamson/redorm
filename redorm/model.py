@@ -1,5 +1,7 @@
 from typing import (
     List,
+    Union,
+    Dict,
     Type,
     TypeVar,
     Set,
@@ -37,7 +39,9 @@ class Query:
         self.pipeline = red.client.pipeline()
 
     def execute(self) -> List:
+        print(self.pipeline.command_stack)
         self.pipeline_results: List = self.pipeline.execute()
+        print(self.pipeline_results)
         results = []
         while self.resolvers:
             resolver = self.resolvers.pop()
@@ -52,6 +56,10 @@ class Query:
 class RedormBase(JsonSchemaMixin):
     id: str = field(metadata={"unique": True})
     _relationships: ClassVar = OrderedDict()
+
+    def __post_init__(self):
+        self._related_ids = dict()
+        self._related_classes = dict()
 
     @classmethod
     def get(cls: Type[S], instance_id=None, **kwargs) -> S:
@@ -84,29 +92,35 @@ class RedormBase(JsonSchemaMixin):
 
     @classmethod
     def _resolve(cls: Type[S], query: Query) -> S:
+        related_ids: Dict[str, Union[List[str], str]] = dict()
+        related_classes: Dict[str, Union[List["RedormBase"], "RedormBase"]] = dict()
+
         for rel_name, relation in reversed(cls._relationships.items()):
-            relation.cached_ref = query.pipeline_results.pop()
+            related_ids[rel_name] = query.pipeline_results.pop()
             if not relation.lazy:
                 res = query.pipeline_results.pop()
                 if res is None:
-                    relation.cached_class = None
+                    related_classes[rel_name] = [] if relation.to_many else None
                 elif isinstance(res, list):
-                    relation.cached_class = [
+                    related_classes[rel_name] = [
                         relation.get_foreign_type().from_json(d, validate=False)
                         for d in res
                         if d is not None
                     ]
                 else:
-                    relation.cached_class = relation.get_foreign_type().from_json(
-                        res, validate=False
-                    )
+                    relation.related_class_cache[
+                        rel_name
+                    ] = relation.get_foreign_type().from_json(res, validate=False)
         data = query.pipeline_results.pop()
         if data is None:
             print(
                 f"None for data, class={cls.__name__!r}, query.pipeline_results={query.pipeline_results!r}, query.resolvers={query.resolvers!r}"
             )
             raise InstanceNotFound
-        return cls.from_json(data, validate=False)
+        instance = cls.from_json(data, validate=False)
+        instance._related_ids = related_ids
+        instance._related_classes = related_classes
+        return instance
 
     @classmethod
     def _get(cls: Type[S], query: Query, instance_id: str):
@@ -115,16 +129,13 @@ class RedormBase(JsonSchemaMixin):
             rel_key = f"{cls.__name__}:relationship:{rel_name}:{instance_id}"
             if not relation.lazy:
                 if relation.to_many:
-                    query.pipeline.evalsha(
-                        red.get_set_indirect_sha,
-                        2,
+                    red.get_set_indirect(
                         f"{relation.get_foreign_type().__name__}:member:",
                         rel_key,
+                        client=query.pipeline,
                     )
                 else:
-                    query.pipeline.evalsha(
-                        red.get_key_indirect_sha, 1, rel_key,
-                    )
+                    red.get_key_indirect(rel_key, client=query.pipeline)
             if relation.to_many:
                 query.pipeline.smembers(rel_key)
             else:
@@ -264,8 +275,9 @@ class RedormBase(JsonSchemaMixin):
             old = self.__class__.from_json(old_json)
             old_dict = old.to_dict(omit_none=False)
             new = False
-        instance_dict = self.to_dict(omit_none=True)
         instance_fields = fields(self.__class__)
+        # TODO: Complete eimplementation of de-duplication
+        instance_dict = self.to_dict(omit_none=True)
         cls_name = self.__class__.__name__
 
         # Pipeline to rollback changes on error
