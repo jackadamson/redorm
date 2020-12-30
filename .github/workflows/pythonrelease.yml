@@ -32,10 +32,7 @@ jobs:
         release_name: ${{ steps.get_version.outputs.release_name }}
         draft: false
         prerelease: false
-    - name: Install dependencies
-      run: poetry build
-    - name: Build and publish
-      env:
-        POETRY_USERNAME: ${{ secrets.PYPI_USERNAME }}
-        POETRY_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-      run: poetry publish
+  - name: Build and publish to pypi
+    uses: JRubics/poetry-publish@v1
+    with:
+      pypi_token: ${{ secrets.PYPI_TOKEN }}
