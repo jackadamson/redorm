@@ -40,11 +40,7 @@ return l
         url = app.config.get("REDORM_URL")
         if url:
             success = self.bind(url)
-            if (
-                not success
-                and app.config.get("FLASK_ENV") == "production"
-                and not app.config.get("REDORM_INBUILT")
-            ):
+            if not success and app.config.get("FLASK_ENV") == "production" and not app.config.get("REDORM_INBUILT"):
                 raise DevelopmentServerUsedInProd(
                     "Redorm was not provided a Redis URL and would fall back to the in-built Redis. "
                     "In the flask app config either set REDORM_URL to a valid redis connection string "

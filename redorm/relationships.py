@@ -86,11 +86,7 @@ class Relationship(IRelationship):
         else:
             if self.cached_ref is None:
                 self.cached_ref = red.client.get(relationship_path)
-            return (
-                self.get_foreign_type().get(self.cached_ref)
-                if self.cached_ref is not None
-                else None
-            )
+            return self.get_foreign_type().get(self.cached_ref) if self.cached_ref is not None else None
 
     def __set__(
         self,
@@ -100,7 +96,7 @@ class Relationship(IRelationship):
         foreign_type = self.get_foreign_type()
         relationship_path = f"{self.relationship_base}:{instance.id}"
         if self.config in {
-            RelationshipConfigEnum.ONE_TO_MANY,
+            RelationshipConfigEnum.MANY_TO_ONE,
             RelationshipConfigEnum.ONE_TO_ONE,
         }:
             related_id_new: Optional[str]
@@ -125,12 +121,8 @@ class Relationship(IRelationship):
                 )
             if related_id_new == related_id_old or self.backref is None:
                 return
-            rel_new = (
-                f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}"
-            )
-            rel_old = (
-                f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}"
-            )
+            rel_new = f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_new}"
+            rel_old = f"{foreign_type.__name__}:relationship:{self.backref}:{related_id_old}"
             if self.config == RelationshipConfigEnum.MANY_TO_ONE:
                 if related_id_old is None:
                     red.client.sadd(
@@ -167,9 +159,7 @@ class Relationship(IRelationship):
             if (not isinstance(value, list)) and (not isinstance(value, set)):
                 raise ValueError("Expected list or set for new relationships")
             old_related_ids = {r for r in red.client.smembers(relationship_path)}
-            new_related_ids = {
-                (r.id if isinstance(r, RedormBase) else r) for r in value
-            }
+            new_related_ids = {(r.id if isinstance(r, RedormBase) else r) for r in value}
             if len(old_related_ids.symmetric_difference(new_related_ids)) == 0:
                 return
             pipeline = red.client.pipeline()
@@ -205,9 +195,7 @@ class Relationship(IRelationship):
                         instance.id,
                     )
             else:
-                raise ValueError(
-                    "Expected relationship config to be of type RelationshipConfigEnum"
-                )
+                raise ValueError("Expected relationship config to be of type RelationshipConfigEnum")
             pipeline.execute()
 
 
