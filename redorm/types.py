@@ -13,7 +13,7 @@ class BinaryField(FieldEncoder):
     def to_wire(self, value: Binary) -> str:
         return b64encode(value).decode("utf-8")
 
-    def to_python(self, value: str) -> Binary:
+    def to_python(self, value: str) -> bytes:
         return b64decode(value)
 
     @property

@@ -92,14 +92,10 @@ class RedormBase(JsonSchemaMixin):
                     relation.cached_class = None
                 elif isinstance(res, list):
                     relation.cached_class = [
-                        relation.get_foreign_type().from_json(d, validate=False)
-                        for d in res
-                        if d is not None
+                        relation.get_foreign_type().from_json(d, validate=False) for d in res if d is not None
                     ]
                 else:
-                    relation.cached_class = relation.get_foreign_type().from_json(
-                        res, validate=False
-                    )
+                    relation.cached_class = relation.get_foreign_type().from_json(res, validate=False)
         data = query.pipeline_results.pop()
         if data is None:
             print(
@@ -123,7 +119,9 @@ class RedormBase(JsonSchemaMixin):
                     )
                 else:
                     query.pipeline.evalsha(
-                        red.get_key_indirect_sha, 1, rel_key,
+                        red.get_key_indirect_sha,
+                        1,
+                        rel_key,
                     )
             if relation.to_many:
                 query.pipeline.smembers(rel_key)
@@ -145,9 +143,7 @@ class RedormBase(JsonSchemaMixin):
     def create(cls: Type[S], **kwargs) -> S:
         # Handle non-relationship parts
         instance_fields = fields(cls)
-        field_values = {
-            f.name: kwargs.get(f.name) for f in instance_fields if f.name in kwargs
-        }
+        field_values = {f.name: kwargs.get(f.name) for f in instance_fields if f.name in kwargs}
         new_id = str(uuid4())
         new_instance = cls.from_dict(dict(id=new_id, **field_values))
         for k, v in kwargs.items():
@@ -183,19 +179,13 @@ class RedormBase(JsonSchemaMixin):
                                 f"{cls.__name__}:index:{f.name}:{cls._encode_field(f.type, v, omit_none=False)}"
                             )
                     else:
-                        raise FilterOnUnindexedField(
-                            f"Trying to filter on unindexed field: {k}"
-                        )
+                        raise FilterOnUnindexedField(f"Trying to filter on unindexed field: {k}")
                 elif isinstance(cls.__dict__[k], IRelationship):
                     rel = cls.__dict__[k]
                     if rel.to_many:
-                        raise NotImplementedError(
-                            "Can't filter based off to-many relationships"
-                        )
+                        raise NotImplementedError("Can't filter based off to-many relationships")
                     if rel.backref is None:
-                        raise NotImplementedError(
-                            "Filtering on a relationship requires a backref"
-                        )
+                        raise NotImplementedError("Filtering on a relationship requires a backref")
                     rel_type = rel.get_foreign_type().__name__
                     if not isinstance(v, str):
                         v = v.id
@@ -219,7 +209,7 @@ class RedormBase(JsonSchemaMixin):
         return ret
 
     @classmethod
-    def list(cls: Type[S], **kwargs) -> List[S]:
+    def list(cls: Type[S], **kwargs) -> Iterable[S]:
         if len(kwargs) > 0:
             member_ids = cls._list_ids(**kwargs)
         else:
@@ -291,13 +281,9 @@ class RedormBase(JsonSchemaMixin):
         ]
         for f in changed_unique_fields_non_null:
             unique_pipeline.hget(f"{cls_name}:key:{f.name}", instance_dict[f.name])
-            unique_pipeline.hsetnx(
-                f"{cls_name}:key:{f.name}", instance_dict[f.name], self.id
-            )
+            unique_pipeline.hsetnx(f"{cls_name}:key:{f.name}", instance_dict[f.name], self.id)
             if old_dict.get(f.name) is not None:
-                revert_pipeline.hset(
-                    f"{cls_name}:key:{f.name}", old_dict[f.name], self.id
-                )
+                revert_pipeline.hset(f"{cls_name}:key:{f.name}", old_dict[f.name], self.id)
                 unique_pipeline.ping()
             else:
                 revert_pipeline.sadd(f"{cls_name}:keynull:{f.name}", self.id)
@@ -311,9 +297,7 @@ class RedormBase(JsonSchemaMixin):
         if unique_pipeline_result_all[0] == 1:
             revert_pipeline.srem(f"{self.__class__.__name__}:all", self.id)
         unique_violating_fields = []
-        for i, r in enumerate(
-            unique_pipeline_result[: len(changed_unique_fields_non_null) * 3 : 3]
-        ):
+        for i, r in enumerate(unique_pipeline_result[: len(changed_unique_fields_non_null) * 3 : 3]):
             if r is None:
                 revert_pipeline.hdel(
                     f"{cls_name}:key:{changed_unique_fields_non_null[i].name}",
@@ -329,9 +313,7 @@ class RedormBase(JsonSchemaMixin):
 
         try:
             if len(unique_violating_fields) > 0:
-                raise UniqueContstraintViolation(
-                    f"New object contained non-unique values: {unique_violating_fields!r}"
-                )
+                raise UniqueContstraintViolation(f"New object contained non-unique values: {unique_violating_fields!r}")
             # Fields that require indexing and are not indexed by uniqueness
             # Index is stored as a set of ids
             indexed_non_unique_fields = [
@@ -346,7 +328,8 @@ class RedormBase(JsonSchemaMixin):
             for f in indexed_non_unique_fields:
                 if instance_dict.get(f.name) is None:
                     index_pipeline.sadd(
-                        f"{cls_name}:indexnull:{f.name}", self.id,
+                        f"{cls_name}:indexnull:{f.name}",
+                        self.id,
                     )
                     if new:
                         index_pipeline.ping()
@@ -368,7 +351,8 @@ class RedormBase(JsonSchemaMixin):
                         index_pipeline.ping()
                     elif old_dict.get(f.name) is None:
                         index_pipeline.srem(
-                            f"{cls_name}:indexnull:{f.name}", self.id,
+                            f"{cls_name}:indexnull:{f.name}",
+                            self.id,
                         )
                         revert_pipeline.sadd(f"{cls_name}:indexnull:{f.name}", self.id)
                     else:
@@ -387,7 +371,8 @@ class RedormBase(JsonSchemaMixin):
                     f = indexed_non_unique_fields[i]
                     if instance_dict.get(f.name) is None:
                         revert_pipeline.srem(
-                            f"{cls_name}:indexnull:{f.name}", self.id,
+                            f"{cls_name}:indexnull:{f.name}",
+                            self.id,
                         )
                     else:
                         revert_pipeline.srem(
