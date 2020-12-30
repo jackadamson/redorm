@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "redorm"
 description = "A simple redis ORM"
-version = "0.6.4"
+version = "0.6.5"
 authors = ["Jack Adamson <jack@mrfluffybunny.com>"]
 license = "MIT"
 classifiers=[
