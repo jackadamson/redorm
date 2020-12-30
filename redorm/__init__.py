@@ -9,4 +9,3 @@ from redorm.relationships import (
 )
 from redorm.exceptions import InstanceNotFound, RedormException
 from redorm.types import Binary
-from redorm._version import version as __version__
