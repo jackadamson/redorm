@@ -93,12 +93,14 @@ class Relationship(IRelationship):
             )
 
     def __set__(
-        self, instance: T, value: Union[None, str, U, List[Union[str, U]]],
+        self,
+        instance: T,
+        value: Union[None, str, U, List[Union[str, U]]],
     ):
         foreign_type = self.get_foreign_type()
         relationship_path = f"{self.relationship_base}:{instance.id}"
         if self.config in {
-            RelationshipConfigEnum.MANY_TO_ONE,
+            RelationshipConfigEnum.ONE_TO_MANY,
             RelationshipConfigEnum.ONE_TO_ONE,
         }:
             related_id_new: Optional[str]
@@ -117,7 +119,10 @@ class Relationship(IRelationship):
                 result = pipeline.execute()
                 related_id_old = result[0]
             else:
-                related_id_old = red.client.getset(relationship_path, related_id_new,)
+                related_id_old = red.client.getset(
+                    relationship_path,
+                    related_id_new,
+                )
             if related_id_new == related_id_old or self.backref is None:
                 return
             rel_new = (
@@ -129,26 +134,34 @@ class Relationship(IRelationship):
             if self.config == RelationshipConfigEnum.MANY_TO_ONE:
                 if related_id_old is None:
                     red.client.sadd(
-                        rel_new, instance.id,
+                        rel_new,
+                        instance.id,
                     )
                 elif related_id_new is None:
                     red.client.srem(
-                        rel_old, instance.id,
+                        rel_old,
+                        instance.id,
                     )
                 else:
                     red.client.smove(
-                        rel_old, rel_new, instance.id,
+                        rel_old,
+                        rel_new,
+                        instance.id,
                     )
             else:
                 if related_id_old is None:
                     red.client.set(
-                        rel_new, instance.id,
+                        rel_new,
+                        instance.id,
                     )
                 elif related_id_new is None:
-                    red.client.delete(rel_new,)
+                    red.client.delete(
+                        rel_new,
+                    )
                 else:
                     red.client.rename(
-                        rel_old, rel_new,
+                        rel_old,
+                        rel_new,
                     )
         else:
             if (not isinstance(value, list)) and (not isinstance(value, set)):
@@ -163,7 +176,8 @@ class Relationship(IRelationship):
             pipeline.delete(relationship_path)
             if new_related_ids:
                 pipeline.sadd(
-                    relationship_path, *new_related_ids,
+                    relationship_path,
+                    *new_related_ids,
                 )
             if self.backref is None:
                 pipeline.execute()
@@ -174,18 +188,21 @@ class Relationship(IRelationship):
             if self.config == RelationshipConfigEnum.MANY_TO_MANY:
                 for idr in ids_to_remove:
                     pipeline.srem(
-                        f"{reverse_path}:{idr}", instance.id,
+                        f"{reverse_path}:{idr}",
+                        instance.id,
                     )
                 for ida in ids_to_add:
                     pipeline.sadd(
-                        f"{reverse_path}:{ida}", instance.id,
+                        f"{reverse_path}:{ida}",
+                        instance.id,
                     )
             elif self.config == RelationshipConfigEnum.ONE_TO_MANY:
                 for idr in ids_to_remove:
                     pipeline.delete(f"{reverse_path}:{idr}")
                 for ida in ids_to_add:
                     pipeline.set(
-                        f"{reverse_path}:{ida}", instance.id,
+                        f"{reverse_path}:{ida}",
+                        instance.id,
                     )
             else:
                 raise ValueError(
@@ -195,7 +212,9 @@ class Relationship(IRelationship):
 
 
 def one_to_many(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
+    foreign_type: Union[str, Type[U]],
+    backref: Optional[str] = None,
+    lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,
@@ -206,7 +225,9 @@ def one_to_many(
 
 
 def one_to_one(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
+    foreign_type: Union[str, Type[U]],
+    backref: Optional[str] = None,
+    lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,
@@ -217,7 +238,9 @@ def one_to_one(
 
 
 def many_to_one(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
+    foreign_type: Union[str, Type[U]],
+    backref: Optional[str] = None,
+    lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,
@@ -228,7 +251,9 @@ def many_to_one(
 
 
 def many_to_many(
-    foreign_type: Union[str, Type[U]], backref: Optional[str] = None, lazy=True,
+    foreign_type: Union[str, Type[U]],
+    backref: Optional[str] = None,
+    lazy=True,
 ):
     return Relationship(
         foreign_type=foreign_type,

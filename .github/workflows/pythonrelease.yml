@@ -16,6 +16,8 @@ jobs:
         python-version: '3.7'
     - name: Get Package Version
       run: |
+        pip install poetry
+        poetry install
         python getversion.py
         echo "##[set-output name=release_name;]$(git log --pretty='%s' -1 | head -n 1)"
       id: get_version
@@ -30,13 +32,9 @@ jobs:
         draft: false
         prerelease: false
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install setuptools wheel twine
+      run: poetry build
     - name: Build and publish
       env:
-        TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-      run: |
-        python setup.py sdist bdist_wheel
-        twine upload dist/*
+        POETRY_USERNAME: ${{ secrets.PYPI_USERNAME }}
+        POETRY_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+      run: poetry publish

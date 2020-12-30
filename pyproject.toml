@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "redorm"
+description = "A simple redis ORM"
+version = "0.6.2"
+authors = ["Jack Adamson <jack@mrfluffybunny.com>"]
+license = "MIT"
+classifiers=[
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[tool.poetry.dependencies]
+python = ">= 3.6"
+fakeredis = "^1.4.5"
+redis = "^3.5.3"
+environs = "^9.3.0"
+dataclasses-jsonschema = {version = "^2.13.0", extras = ["fast-validation"]}
+
+[tool.poetry.dev-dependencies]
+black = "^20.8b1"
+
+[tool.black]
+line-length = 120
+target-version = ['py36']
+include = '\.pyi?$'
