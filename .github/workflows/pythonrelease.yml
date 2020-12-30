@@ -3,7 +3,7 @@ name: Create Release
 on:
   push:
     paths:
-      - 'redorm/_version.py'
+      - 'pyproject.toml'
 
 jobs:
   release:
