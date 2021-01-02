@@ -43,7 +43,7 @@ Stored at the location `Model:index:attribute:value` as a set of IDs that have t
 
 In the above example, it would set `Role:index:level:100` to the *set* `{'858b1d16-04a4-421f-a515-816b725ac186'}`.
 
-## Summary So Far
+## Summary
 
 | Functionality | Pattern | Redis Type |
 | ------------- | ------- | ---------- |
