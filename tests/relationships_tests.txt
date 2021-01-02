@@ -1,0 +1,23 @@
+>>> from dataclasses import dataclass, field
+>>> from typing import Optional
+>>> from redorm import RedormBase, one_to_one, one_to_many, many_to_one, many_to_many, red
+>>> @dataclass
+... class Person(RedormBase):
+...     name: str = field(metadata={"unique": True})
+...     age: int = field(metadata={"index": True})
+...     evilness: Optional[int] = field(metadata={"index": True}, default=None)
+...     siblings = many_to_many(foreign_type="Person", backref="siblings")
+...     dad = many_to_one(foreign_type="Person", backref="children")
+...     children = one_to_many(foreign_type="Person", backref="dad")
+...     favourite_color = one_to_one("Color", backref="liker")
+...
+>>> @dataclass
+... class Color(RedormBase):
+...     name: str
+...     liker = one_to_one(Person, backref="favourite_color")
+...
+>>> homer = Person.create(name="Homer", age=50)
+>>> print(f"homer.children={homer.children!r}")
+homer.children=[]
+>>> print(f"homer.favourite_color={homer.favourite_color!r}")
+homer.favourite_color=None

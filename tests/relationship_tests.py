@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 from redorm import RedormBase, one_to_one, one_to_many, many_to_one, many_to_many, red
 
-red.bind("redis://localhost")
-red.client.flushall()
+# red.bind("redis://localhost")
+# red.client.flushall()
 
 
 @dataclass

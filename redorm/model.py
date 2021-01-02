@@ -13,6 +13,8 @@ from uuid import uuid4
 from collections import OrderedDict
 import json
 from dataclasses_jsonschema import JsonSchemaMixin
+from redis.lock import Lock
+
 from redorm.exceptions import (
     InstanceNotFound,
     UniqueContstraintViolation,
@@ -223,7 +225,7 @@ class RedormBase(JsonSchemaMixin):
         blocking_timeout=None,
         lock_class=None,
         thread_local=True,
-    ):
+    ) -> Lock:
         return red.client.lock(
             f"{self.__class__.__name__}:userlock:{self.id}",
             timeout=timeout,
@@ -234,9 +236,31 @@ class RedormBase(JsonSchemaMixin):
         )
 
     def delete(self):
-        # TODO: Handle removal of relationships and unique/indexes
-        with red.client.lock(f"{self.__class__.__name__}:lock:{self.id}"):
-            red.client.delete(self.id)
+        # TODO: Handle removal of relationships
+        instance_id = self.id
+        cls_name = self.__class__.__name__
+        with red.client.lock(f"{cls_name}:lock:{instance_id}"):
+            self.refresh()
+            instance_dict = self.to_dict(omit_none=True)
+            p = red.client.pipeline()
+            p.srem(f"{cls_name}:all", instance_id)
+            p.unlink(f"{cls_name}:member:{instance_id}")
+            for f in fields(self.__class__):
+                val = instance_dict.get(f.name)
+                if f.metadata.get("unique"):
+                    if val is None:
+                        p.srem(f"{cls_name}:keynull:{f.name}", instance_id)
+                    else:
+                        p.hdel(f"{cls_name}:key:{f.name}", val)
+                elif f.metadata.get("index"):
+                    if val is None:
+                        p.srem(f"{cls_name}:indexnull:{f.name}", instance_id)
+                    else:
+                        p.srem(
+                            f"{cls_name}:index:{f.name}:{self.__class__._encode_field(f.type, instance_dict[f.name], omit_none=True)}",
+                            self.id,
+                        )
+            p.execute(raise_on_error=True)
 
     def refresh(self) -> None:
         latest = red.client.get(f"{self.__class__.__name__}:member:{self.id}")
@@ -244,6 +268,9 @@ class RedormBase(JsonSchemaMixin):
             raise InstanceNotFound
         for k, v in json.loads(latest).items():
             setattr(self, k, v)
+        for k, v in self._relationships.items():
+            v.cached_class = None
+            v.cached_ref = None
 
     def save(self) -> None:
         old_json = red.client.get(f"{self.__class__.__name__}:member:{self.id}")

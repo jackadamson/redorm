@@ -61,7 +61,7 @@ class Relationship(IRelationship):
     def __set_name__(self, owner, name):
         self.__owner = owner
         self.relationship_name = name
-        self.relationship_base = f"{name}:relationship:{self.relationship_name}"
+        self.relationship_base = f"{owner.__name__}:relationship:{self.relationship_name}"
         owner._relationships = dict(**owner._relationships, **{name: self})
 
     def get_foreign_type(self) -> Type[U]:
