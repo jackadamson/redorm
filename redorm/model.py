@@ -401,6 +401,9 @@ class RedormBase(JsonSchemaMixin):
         all_models[cls.__name__] = cls
         super().__init_subclass__(**kwargs)
 
+    def __hash__(self):
+        return hash(f"{self.__class__.__name__}:{self.id}")
+
 
 class IRelationship:
     pass
