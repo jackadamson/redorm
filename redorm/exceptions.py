@@ -6,10 +6,6 @@ class InstanceNotFound(RedormException):
     pass
 
 
-class DevelopmentServerUsedInProd(RedormException):
-    pass
-
-
 class UniqueContstraintViolation(RedormException):
     pass
 

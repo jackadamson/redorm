@@ -4,7 +4,6 @@ from typing import (
     TypeVar,
     Set,
     ClassVar,
-    Iterable,
     Callable,
     Optional,
 )
@@ -14,7 +13,6 @@ from collections import OrderedDict
 import json
 from dataclasses_jsonschema import JsonSchemaMixin
 from redis.lock import Lock
-
 from redorm.exceptions import (
     InstanceNotFound,
     UniqueContstraintViolation,
@@ -35,12 +33,12 @@ class Query:
     def __init__(self):
         self.results = []
         self.pipeline_results = None
-        self.resolvers: List[Callable[["Query"], None]] = []
+        self.resolvers: List[Callable[["Query"], S]] = []
         self.pipeline = red.client.pipeline()
 
     def execute(self) -> List:
         self.pipeline_results: List = self.pipeline.execute()
-        results = []
+        results: List = []
         while self.resolvers:
             resolver = self.resolvers.pop()
             try:
@@ -86,6 +84,7 @@ class RedormBase(JsonSchemaMixin):
 
     @classmethod
     def _resolve(cls: Type[S], query: Query) -> S:
+        assert query.pipeline_results is not None
         for rel_name, relation in reversed(cls._relationships.items()):
             relation.cached_ref = query.pipeline_results.pop()
             if not relation.lazy:
@@ -133,7 +132,7 @@ class RedormBase(JsonSchemaMixin):
         query.resolvers.append(cls._resolve)
 
     @classmethod
-    def get_bulk(cls: Type[S], instance_ids: Set[str]) -> Iterable[S]:
+    def get_bulk(cls: Type[S], instance_ids: Set[str]) -> List[S]:
         if len(instance_ids) == 0:
             return []
         query = Query()
@@ -211,7 +210,7 @@ class RedormBase(JsonSchemaMixin):
         return ret
 
     @classmethod
-    def list(cls: Type[S], **kwargs) -> Iterable[S]:
+    def list(cls: Type[S], **kwargs) -> List[S]:
         if len(kwargs) > 0:
             member_ids = cls._list_ids(**kwargs)
         else:
