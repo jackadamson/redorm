@@ -22,6 +22,9 @@ jobs:
           echo "##[set-output name=version;]v$(poetry version -s)"
           echo "##[set-output name=release_name;]$(git log --pretty='%s' -1 | head -n 1)"
         id: get_version
+      - name: Run Tests
+        run: pytest
+        id: unittests
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1

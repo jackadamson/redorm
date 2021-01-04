@@ -1,1 +1,1 @@
-from tests.relationship_tests import *
+# from tests.relationship_tests import *

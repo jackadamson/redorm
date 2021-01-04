@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "redorm"
 description = "A simple redis ORM"
-version = "0.6.10"
+version = "0.7.0"
 readme = "README.md"
 authors = ["Jack Adamson <jack@mrfluffybunny.com>"]
 license = "MIT"
@@ -15,7 +15,7 @@ classifiers=[
 ]
 
 [tool.poetry.dependencies]
-python = ">= 3.6"
+python = ">= 3.6.1"
 fakeredis = "^1.4.5"
 redis = "^3.5.3"
 environs = "^9.3.0"
@@ -25,6 +25,7 @@ dataclasses-jsonschema = {version = "^2.13.0", extras = ["fast-validation"]}
 black = "^20.8b1"
 pytest = "^6.2.1"
 pytest-sugar = "^0.9.4"
+pre-commit = "^2.9.3"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
@@ -37,3 +38,16 @@ testpaths = [
 line-length = 120
 target-version = ['py36']
 include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''

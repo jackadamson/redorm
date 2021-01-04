@@ -1,3 +1,6 @@
+import json
+from collections import OrderedDict, namedtuple
+from dataclasses import dataclass, field, fields, Field
 from typing import (
     List,
     Type,
@@ -7,12 +10,13 @@ from typing import (
     Callable,
     Optional,
 )
-from dataclasses import dataclass, field, fields, Field
 from uuid import uuid4
-from collections import OrderedDict
-import json
+
 from dataclasses_jsonschema import JsonSchemaMixin
+from redis import ResponseError
 from redis.lock import Lock
+
+from redorm.client import red
 from redorm.exceptions import (
     InstanceNotFound,
     UniqueContstraintViolation,
@@ -20,11 +24,11 @@ from redorm.exceptions import (
     FilterOnUnindexedField,
     MultipleInstancesReturned,
 )
-from redorm.client import red
 
 S = TypeVar("S", bound="RedormBase")
 
 all_models = dict()
+FieldChange = namedtuple("FieldChange", ["name", "old", "new"])
 
 
 class Query:
@@ -113,14 +117,14 @@ class RedormBase(JsonSchemaMixin):
             if not relation.lazy:
                 if relation.to_many:
                     query.pipeline.evalsha(
-                        red.get_set_indirect_sha,
+                        red.get_set_indirect_script.sha,
                         2,
                         f"{relation.get_foreign_type().__name__}:member:",
                         rel_key,
                     )
                 else:
                     query.pipeline.evalsha(
-                        red.get_key_indirect_sha,
+                        red.get_key_indirect_script.sha,
                         1,
                         rel_key,
                     )
@@ -282,139 +286,23 @@ class RedormBase(JsonSchemaMixin):
             new = False
         instance_dict = self.to_dict(omit_none=True)
         instance_fields = fields(self.__class__)
-        cls_name = self.__class__.__name__
-
-        # Pipeline to rollback changes on error
-        revert_pipeline = red.client.pipeline()
-
-        # Pipeline to ensure uniqueness of unique fields
-        unique_pipeline = red.client.pipeline()
-        unique_pipeline.sadd(f"{self.__class__.__name__}:all", self.id)
-        # TODO: Handle rollback
-        changed_unique_fields_non_null = [
-            f
+        key_changes: List[FieldChange] = [
+            FieldChange(f.name, old_dict.get(f.name), instance_dict.get(f.name))
             for f in instance_fields
-            if f.metadata.get("unique")
-            and instance_dict.get(f.name) is not None
-            and (instance_dict.get(f.name) != old_dict.get(f.name) or new)
+            if f.metadata.get("unique") and (new or instance_dict.get(f.name) != old_dict.get(f.name))
         ]
-        changed_unique_fields_null = [
-            f
+        index_changes: List[FieldChange] = [
+            FieldChange(f.name, old_dict.get(f.name), instance_dict.get(f.name))
             for f in instance_fields
-            if f.metadata.get("unique")
-            and instance_dict.get(f.name) is None
-            and (instance_dict.get(f.name) != old_dict.get(f.name) or new)
+            if not f.metadata.get("unique")
+            and f.metadata.get("index")
+            and (new or instance_dict.get(f.name) != old_dict.get(f.name))
         ]
-        for f in changed_unique_fields_non_null:
-            unique_pipeline.hget(f"{cls_name}:key:{f.name}", instance_dict[f.name])
-            unique_pipeline.hsetnx(f"{cls_name}:key:{f.name}", instance_dict[f.name], self.id)
-            if old_dict.get(f.name) is not None:
-                revert_pipeline.hset(f"{cls_name}:key:{f.name}", old_dict[f.name], self.id)
-                unique_pipeline.ping()
-            else:
-                revert_pipeline.sadd(f"{cls_name}:keynull:{f.name}", self.id)
-                unique_pipeline.srem(f"{cls_name}:keynull:{f.name}", self.id)
-
-        for f in changed_unique_fields_null:
-            unique_pipeline.sadd(f"{cls_name}:keynull:{f.name}", self.id)
-            revert_pipeline.srem(f"{cls_name}:keynull:{f.name}", self.id)
-        unique_pipeline_result_all = unique_pipeline.execute()
-        unique_pipeline_result = unique_pipeline_result_all[1:]
-        if unique_pipeline_result_all[0] == 1:
-            revert_pipeline.srem(f"{self.__class__.__name__}:all", self.id)
-        unique_violating_fields = []
-        for i, r in enumerate(unique_pipeline_result[: len(changed_unique_fields_non_null) * 3 : 3]):
-            if r is None:
-                revert_pipeline.hdel(
-                    f"{cls_name}:key:{changed_unique_fields_non_null[i].name}",
-                    instance_dict[changed_unique_fields_non_null[i].name],
-                )
-            elif r != self.id:
-                revert_pipeline.hdel(
-                    f"{cls_name}:key:{changed_unique_fields_non_null[i].name}",
-                    instance_dict[changed_unique_fields_non_null[i].name],
-                )
-                # Failed to set as key already exists
-                unique_violating_fields.append(changed_unique_fields_non_null[i].name)
-
+        data = json.dumps(instance_dict, sort_keys=True)
         try:
-            if len(unique_violating_fields) > 0:
-                raise UniqueContstraintViolation(f"New object contained non-unique values: {unique_violating_fields!r}")
-            # Fields that require indexing and are not indexed by uniqueness
-            # Index is stored as a set of ids
-            indexed_non_unique_fields = [
-                f
-                for f in instance_fields
-                if f.metadata.get("index")
-                and not f.metadata.get("unique")
-                and (instance_dict.get(f.name) != old_dict.get(f.name) or new)
-            ]
-            # Pipeline to index indexable fields
-            index_pipeline = red.client.pipeline()
-            for f in indexed_non_unique_fields:
-                if instance_dict.get(f.name) is None:
-                    index_pipeline.sadd(
-                        f"{cls_name}:indexnull:{f.name}",
-                        self.id,
-                    )
-                    if new:
-                        index_pipeline.ping()
-                    else:
-                        index_pipeline.srem(
-                            f"{cls_name}:index:{f.name}:{self.__class__._encode_field(f.type, old_dict[f.name], omit_none=True)}",
-                            self.id,
-                        )
-                        revert_pipeline.sadd(
-                            f"{cls_name}:index:{f.name}:{self.__class__._encode_field(f.type, old_dict[f.name], omit_none=True)}",
-                            self.id,
-                        )
-                else:
-                    index_pipeline.sadd(
-                        f"{cls_name}:index:{f.name}:{self.__class__._encode_field(f.type, instance_dict[f.name], omit_none=True)}",
-                        self.id,
-                    )
-                    if new:
-                        index_pipeline.ping()
-                    elif old_dict.get(f.name) is None:
-                        index_pipeline.srem(
-                            f"{cls_name}:indexnull:{f.name}",
-                            self.id,
-                        )
-                        revert_pipeline.sadd(f"{cls_name}:indexnull:{f.name}", self.id)
-                    else:
-                        index_pipeline.srem(
-                            f"{cls_name}:index:{f.name}:{self.__class__._encode_field(f.type, old_dict[f.name], omit_none=True)}",
-                            self.id,
-                        )
-                        revert_pipeline.sadd(
-                            f"{cls_name}:index:{f.name}:{self.__class__._encode_field(f.type, old_dict[f.name], omit_none=True)}",
-                            self.id,
-                        )
-
-            index_pipeline_results = index_pipeline.execute()
-            for i, r in enumerate(index_pipeline_results[::2]):
-                if r == 1:
-                    f = indexed_non_unique_fields[i]
-                    if instance_dict.get(f.name) is None:
-                        revert_pipeline.srem(
-                            f"{cls_name}:indexnull:{f.name}",
-                            self.id,
-                        )
-                    else:
-                        revert_pipeline.srem(
-                            f"{cls_name}:index:{f.name}:{self.__class__._encode_field(f.type, instance_dict[f.name], omit_none=True)}",
-                            self.id,
-                        )
-
-            pipe = red.client.pipeline()
-            pipe.set(
-                f"{cls_name}:member:{self.id}",
-                json.dumps(instance_dict, sort_keys=True),
-            )
-            pipe.execute()
-        except Exception as e:
-            revert_pipeline.execute()
-            raise e
+            self._atomic_unique_save(key_changes=key_changes, index_changes=index_changes, data=data)
+        except ResponseError as e:
+            raise UniqueContstraintViolation(*e.args) from e
 
     def update(self, **kwargs):
         with red.client.lock(f"{self.__class__.__name__}:lock:{self.id}"):
@@ -422,6 +310,27 @@ class RedormBase(JsonSchemaMixin):
             for k, v in kwargs.items():
                 setattr(self, k, v)
             self.save()
+
+    def _atomic_unique_save(self, key_changes: List[FieldChange], index_changes: List[FieldChange], data: str):
+        unique = [change for change in key_changes if change.new is not None]
+        unique_null = [change for change in key_changes if change.new is None]
+        index = [change for change in index_changes if change.new is not None]
+        index_null = [change for change in index_changes if change.new is None]
+        args = [
+            len(unique),
+            len(unique_null),
+            len(index),
+            len(index_null),
+            data,
+            self.id,
+            self.__class__.__name__,
+            *[elem for change in unique for elem in change],
+            *[elem for change in unique_null for elem in change],
+            *[elem for change in index for elem in change],
+            *[elem for change in index_null for elem in change],
+        ]
+        args_no_none = ["" if arg is None else arg for arg in args]
+        red.unique_save(0, *args_no_none)
 
     def __init_subclass__(cls, **kwargs):
         all_models[cls.__name__] = cls
